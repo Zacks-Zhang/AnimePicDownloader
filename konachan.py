@@ -7,7 +7,7 @@ import urllib2
 import pubFunc
 import threading
 import cPickle as pickle
-from progressbar import Bar, ETA, Percentage, ProgressBar, RotatingMarker
+from progressbar import Bar, Percentage, ProgressBar, RotatingMarker
 sys.path.append("pubFunc.py")
 
 ####################
@@ -67,11 +67,14 @@ class CustomThread(threading.Thread):
 
     def GetPicURL(self):
         global pic_url_list, index_page_url_list
+        fail_count = 0
         while(index_page_url_list):
             self.lock.acquire()
             url = index_page_url_list.pop()
             self.lock.release()
             items = self.Try3ParseJson(url)
+            if items == {}:
+                ++fail_count
             for single in items:
                 if preference['safe'] and single['rating'] == "s":
                     self.lock.acquire()
@@ -83,27 +86,29 @@ class CustomThread(threading.Thread):
                     pic_url_list.append(
                         {'id': single['id'], 'url': single['file_url']})
                     self.lock.release()
+        if fail_count != 0:
+            print self.getName() + " 有" + str(fail_count) + "页打开失败"
 
     def Try3ParseJson(self, index_page_url):
         try:
             items = pubFunc.ParseJson(index_page_url)
             return items
-        except urllib2.HTTPError, e:
-            if e.code == 503:
+        except:
+            try:
+                items = pubFunc.ParseJson(index_page_url)
+                return items
+            except:
                 try:
                     items = pubFunc.ParseJson(index_page_url)
                     return items
-                except urllib2.HTTPError, e:
-                    if e.code == 503:
-                        try:
-                            items = pubFunc.ParseJson(index_page_url)
-                            return items
-                        except:
-                            SaveInfor(
-                                complete_tag + ".jsonerror", 'ERROR/', index_page_url, 'ab')
+                except:
+                    SaveInfor(
+                        complete_tag + ".jsonerror", 'ERROR/', index_page_url, 'ab')
+                    return {}
 
     def Download(self):
         global pic_url_list, count
+        fail_count = 0
         while(pic_url_list):
             self.lock.acquire()
             url_dict = pic_url_list.pop()
@@ -112,26 +117,30 @@ class CustomThread(threading.Thread):
             self.lock.release()
 
             file_name = self.FormatFileName(url)
-            self.Try3SavePic(url, file_name)
+            fail_count += self.Try3SavePic(url, file_name)
 
             self.lock.acquire()
             count += 1
             self.lock.release()
+        if fail_count != 0:
+            print self.getName() + " 有" + str(fail_count) + "个图片下载失败"
 
     def Try3SavePic(self, url, file_name):
         try:
             pubFunc.SavePic(url, file_name)
-        except urllib2.HTTPError, e:
-            if e.code == 503:
+            return 0
+        except:
+            try:
+                pubFunc.SavePic(url, file_name)
+                return 0
+            except:
                 try:
                     pubFunc.SavePic(url, file_name)
-                except urllib2.HTTPError, e:
-                    if e.code == 503:
-                        try:
-                            pubFunc.SavePic(url, file_name)
-                        except:
-                            SaveInfor(
-                                complete_tag + ".dlerror", 'ERROR/', url, 'ab')
+                    return 0
+                except:
+                    SaveInfor(
+                        complete_tag + ".dlerror", 'ERROR/', url, 'ab')
+                    return 1
 
     def FormatFileName(self, pic_url):
         unquoted_pic_url = urllib.unquote(pic_url)
@@ -217,6 +226,7 @@ def BuildAllPagesURL():
 
 
 def StartGetPicURLThreads():
+    print "正在获取图片链接......"
     threads = []
     for i in range(0, threads_num):
         ct_thread = CustomThread(False)
@@ -227,6 +237,7 @@ def StartGetPicURLThreads():
 
 
 def StartDownloadThreads():
+    print "开始下载......"
     threads = []
     p_bar = ProgressBarThread(len(pic_url_list))
     threads.append(p_bar)
@@ -242,7 +253,8 @@ def StartDownloadThreads():
 
 
 def RemoveTempFiles():
-    shutil.rmtree('TEMP')
+    if os.exists('TEMP'):
+        shutil.rmtree('TEMP')
 
 
 def main():
