@@ -253,7 +253,7 @@ def StartDownloadThreads():
 
 
 def RemoveTempFiles():
-    if os.exists('TEMP'):
+    if os.path.exists('TEMP'):
         shutil.rmtree('TEMP')
 
 
